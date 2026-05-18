@@ -34,11 +34,11 @@ def obtener_db():
         # Forzar una prueba de conexión (ping)
         client.admin.command('ping')
         
-        print(f"✅ Conexión modular exitosa a la base de datos: {db_name}")
+        print(f"Conexión modular exitosa a la base de datos: {db_name}")
         return client[db_name]
 
     except Exception as e:
-        print(f"❌ Error al conectar a MongoDB: {e}")
+        print(f"Error al conectar a MongoDB: {e}")
         return None
 
 # Bloque de prueba (solo se ejecuta si corres este archivo directamente)
