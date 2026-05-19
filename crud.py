@@ -3,18 +3,17 @@ from conexion import obtener_db
 # Inicializar la conexión a la base de datos (dinámica según tu archivo .env)
 db = obtener_db()
 
-def insertar_venta(datos_cliente, datos_producto):
+def insertar_venta(datos_cliente, lista_productos):
     """
-    C: CREATE - Inserta un nuevo documento de venta en la colección 'ventas'.
-    Recibe dos diccionarios y los guarda de forma estructurada.
+    C: CREATE - Inserta una venta con múltiples productos en la colección 'ventas'.
+    Recibe un diccionario (cliente) y una lista de diccionarios (productos).
     """
-    # Validar que la conexión a MongoDB esté activa
     if db is None:
-        print("No se puede insertar: No hay conexión a la base de datos.")
+        print(f"No se puede insertar: No hay conexión a la base de datos.")
         return None
         
     try:
-        # Estructuramos el documento final de MongoDB (Modelo Embebido)
+        # Estructuramos el documento final para MongoDB
         documento_venta = {
             "cliente": {
                 "nombre": datos_cliente.get("nombre"),
@@ -23,21 +22,15 @@ def insertar_venta(datos_cliente, datos_producto):
                 "comuna": datos_cliente.get("comuna"),
                 "ciudad": datos_cliente.get("ciudad")
             },
-            "producto": {
-                "item": datos_producto.get("item"),
-                "cantidad": datos_producto.get("cantidad"),
-                "precio": datos_producto.get("precio")
-            }
+            # Pasamos la lista completa de productos directamente. 
+            # MongoDB la almacena de forma nativa como un arreglo (Array).
+            "producto": lista_productos 
         }
         
-        # Insertar el documento en la colección llamada 'ventas'
-        # Si la colección no existe, MongoDB la crea automáticamente en este momento
+        # Insertar en la colección 'ventas'
         resultado = db.ventas.insert_one(documento_venta)
         
-        # Imprimir confirmación en la consola del servidor
-        print(f"Documento insertado con éxito. ID asignado por MongoDB: {resultado.inserted_id}")
-        
-        # Retornamos el _id autogenerado para que la interfaz pueda mostrarlo
+        print(f"Venta multiproducto insertada con éxito. ID: {resultado.inserted_id}")
         return resultado.inserted_id
 
     except Exception as e:

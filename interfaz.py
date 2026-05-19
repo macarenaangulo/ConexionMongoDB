@@ -1,24 +1,70 @@
 import tkinter as tk
 from tkinter import ttk
-from tkinter import messagebox  # Para mostrar alertas de éxito o error
+from tkinter import messagebox
 
 # Importamos la función de inserción desde nuestro módulo crud.py
 from crud import insertar_venta 
 
-# Diccionarios globales para almacenar las referencias a los Entry
+# Diccionarios globales para almacenar las referencias a los Entry de datos
 campos_cliente = {}
 campos_producto = {}
 
-def limpiar_campos():
-    """Borra el contenido de todos los Entry usando las referencias guardadas"""
+# Lista en memoria para almacenar los productos agregados temporalmente
+lista_productos_memoria = []
+
+def limpiar_campos_completos():
+    """Borra absolutamente todo el formulario y vacía la tabla de productos"""
+    global lista_productos_memoria
     for entry in campos_cliente.values():
         entry.delete(0, tk.END)
-    for entry in campos_producto.values():
-        entry.delete(0, tk.END)
+    limpiar_formulario_producto()
+    
+    # Vaciar lista en memoria y limpiar el Treeview
+    lista_productos_memoria = []
+    for item in tabla_productos.get_children():
+        tabla_productos.delete(item)
 
-def aceptar_datos():
-    """Recupera los datos de la interfaz, los estructura e invoca al CRUD"""
-    # 1. Extraer los datos del cliente desde la interfaz
+def limpiar_formulario_producto():
+    """Limpia sólo los campos del bloque Producto para poder escribir uno nuevo"""
+    campos_producto["item"].delete(0, tk.END)
+    campos_producto["cantidad"].delete(0, tk.END)
+    campos_producto["precio"].delete(0, tk.END)
+
+def agregar_producto_a_lista():
+    """Valida el producto actual y lo añade a la tabla visual y a la memoria"""
+    item = campos_producto["item"].get().strip()
+    cantidad_str = campos_producto["cantidad"].get().strip()
+    precio_str = campos_producto["precio"].get().strip()
+    
+    if not item or not cantidad_str or not precio_str:
+        messagebox.showwarning("Campos incompletos", "Por favor, complete todos los campos del producto.")
+        return
+        
+    try:
+        cantidad = int(cantidad_str)
+        precio = int(precio_str)
+    except ValueError:
+        messagebox.showerror("Error de tipo", "Cantidad y Precio deben ser números enteros.")
+        return
+
+    # Calcular subtotal para mostrarlo en la tabla
+    subtotal = cantidad * precio
+    
+    # 1. Agregar a la lista interna en memoria
+    lista_productos_memoria.append({
+        "item": item,
+        "cantidad": cantidad,
+        "precio": precio
+    })
+    
+    # 2. Insertar visualmente en el Treeview (tabla en pantalla)
+    tabla_productos.insert("", tk.END, values=(item, cantidad, f"${precio:,}", f"${subtotal:,}"))
+    
+    # Limpiar solo el bloque de producto para que ingresen el siguiente de forma cómoda
+    limpiar_formulario_producto()
+
+def enviar_venta_final():
+    """Recupera los datos del cliente y el arreglo de productos para enviarlo al CRUD"""
     datos_cliente = {
         "nombre": campos_cliente["Nombre:"].get().strip(),
         "email": campos_cliente["Email:"].get().strip(),
@@ -27,88 +73,91 @@ def aceptar_datos():
         "ciudad": campos_cliente["Ciudad:"].get().strip()
     }
     
-    # 2. Extraer y validar los datos del producto
-    try:
-        cantidad_str = campos_producto["cantidad"].get().strip()
-        precio_str = campos_producto["precio"].get().strip()
+    # Validaciones fundamentales
+    if not datos_cliente["nombre"]:
+        messagebox.showwarning("Campos vacíos", "El Nombre del cliente es obligatorio.")
+        return
         
-        # Convertimos a enteros para que en MongoDB se guarden como números y no como texto
-        cantidad = int(cantidad_str) if cantidad_str else 0
-        precio = int(precio_str) if precio_str else 0
-    except ValueError:
-        messagebox.showerror("Error de validación", "Cantidad y Precio deben ser valores numéricos enteros.")
+    if not lista_productos_memoria:
+        messagebox.showwarning("Sin productos", "Debe agregar al menos un producto a la lista antes de guardar.")
         return
 
-    datos_producto = {
-        "item": campos_producto["item"].get().strip(),
-        "cantidad": cantidad,
-        "precio": precio
-    }
+    # Llamar al módulo CRUD enviando la lista (array) de productos directamente
+    id_generado = insertar_venta(datos_cliente, lista_productos_memoria)
     
-    # Validar que al menos los campos obligatorios no estén vacíos
-    if not datos_cliente["nombre"] or not datos_producto["item"]:
-        messagebox.showwarning("Campos vacíos", "Por favor, complete al menos el Nombre del cliente y el Producto.")
-        return
-
-    # 3. Llamar al módulo CRUD para insertar el documento en MongoDB
-    id_generado = insertar_venta(datos_cliente, datos_producto)
-    
-    # 4. Mostrar feedback al usuario según el resultado
     if id_generado:
-        messagebox.showinfo("Éxito", f"Registro insertado correctamente en MongoDB.\nID generado: {id_generado}")
-        limpiar_campos()  # Limpia el formulario tras un registro exitoso
+        messagebox.showinfo("Éxito", f"Venta registrada exitosamente con {len(lista_productos_memoria)} productos.\nID: {id_generado}")
+        limpiar_campos_completos()
     else:
-        messagebox.showerror("Error", "No se pudo guardar el registro. Verifique la conexión en la consola.")
+        messagebox.showerror("Error", "No se pudo guardar la venta. Revise la consola del sistema.")
 
-# Configuración de la ventana principal
+
+# --- CONFIGURACIÓN VENTANA PRINCIPAL ---
 window = tk.Tk()
-window.title("Formulario Cliente - Tienda Online")
-window.geometry("400x480")
+window.title("Formulario de Ventas Multi-Producto")
+window.geometry("460x650") # Ampliado para dar espacio a la tabla
 
 # --- FRAME: DATOS DEL CLIENTE ---
 frame_cliente = tk.LabelFrame(window, text="Datos del Cliente", padx=10, pady=10)
 frame_cliente.pack(padx=20, pady=10, fill="x")
 
-# Campos Cliente (Guardando la referencia en el diccionario 'campos_cliente')
 labels_cliente = ["Nombre:", "Email:", "Dirección:", "Comuna:", "Ciudad:"]
 for i, texto in enumerate(labels_cliente):
     tk.Label(frame_cliente, text=texto).grid(row=i, column=0, sticky="w", pady=2)
-    entry = tk.Entry(frame_cliente, width=30)
+    entry = tk.Entry(frame_cliente, width=35)
     entry.grid(row=i, column=1, pady=2)
-    campos_cliente[texto] = entry # El label sirve de clave para recuperar el widget después
+    campos_cliente[texto] = entry
 
-# --- FRAME: PRODUCTOS ---
-frame_productos = tk.LabelFrame(window, text="Productos", padx=10, pady=10)
-frame_productos.pack(padx=20, pady=10, fill="x")
+# --- FRAME: ENTRADA DE PRODUCTOS ---
+frame_productos = tk.LabelFrame(window, text="Ingreso de Productos", padx=10, pady=10)
+frame_productos.pack(padx=20, pady=5, fill="x")
 
-# Producto
 tk.Label(frame_productos, text="Producto:").grid(row=0, column=0, sticky="w")
-ent_prod = tk.Entry(frame_productos, width=30)
+ent_prod = tk.Entry(frame_productos, width=35)
 ent_prod.grid(row=0, column=1, pady=2, columnspan=3)
 campos_producto["item"] = ent_prod
 
-# Cantidad
 tk.Label(frame_productos, text="Cantidad:").grid(row=1, column=0, sticky="w")
 ent_cant = tk.Entry(frame_productos, width=5)
 ent_cant.grid(row=1, column=1, sticky="w", pady=2)
 campos_producto["cantidad"] = ent_cant
 
-# Precio (en la misma fila que cantidad)
 tk.Label(frame_productos, text="Precio:").grid(row=1, column=2, sticky="w", padx=5)
-ent_precio = tk.Entry(frame_productos, width=10)
+ent_precio = tk.Entry(frame_productos, width=12)
 ent_precio.grid(row=1, column=3, sticky="w", pady=2)
 campos_producto["precio"] = ent_precio
 
-# --- FRAME: BOTONES DE ACCIÓN ---
+# Botón intermedio para añadir ítems a la tabla
+btn_add_prod = tk.Button(frame_productos, text="➕ Agregar Producto a Lista", command=agregar_producto_a_lista, bg="#2196F3", fg="white")
+btn_add_prod.grid(row=2, column=0, columnspan=4, pady=8, sticky="ew")
+
+# --- FRAME: LISTA / DETALLE DE LA VENTA ---
+frame_tabla = tk.LabelFrame(window, text="Detalle de Productos Agregados", padx=10, pady=10)
+frame_tabla.pack(padx=20, pady=5, fill="both", expand=True)
+
+# Configurar columnas de la tabla visual
+columnas = ("producto", "cantidad", "precio", "subtotal")
+tabla_productos = ttk.Treeview(frame_tabla, columns=columnas, show="headings", height=5)
+
+tabla_productos.heading("producto", text="Producto")
+tabla_productos.heading("cantidad", text="Cant.")
+tabla_productos.heading("precio", text="Precio Unit.")
+tabla_productos.heading("subtotal", text="Subtotal")
+
+tabla_productos.column("producto", width=160, anchor="w")
+tabla_productos.column("cantidad", width=50, anchor="center")
+tabla_productos.column("precio", width=80, anchor="e")
+tabla_productos.column("subtotal", width=80, anchor="e")
+tabla_productos.pack(fill="both", expand=True)
+
+# --- FRAME: ACCIONES FINALES ---
 frame_botones = tk.Frame(window)
 frame_botones.pack(padx=20, pady=15, fill="x")
 
-btn_limpiar = tk.Button(frame_botones, text="Limpiar Campos", command=limpiar_campos, width=15)
+btn_limpiar = tk.Button(frame_botones, text="Limpiar Todo", command=limpiar_campos_completos, width=15)
 btn_limpiar.pack(side="left", padx=5)
 
-# Asociamos el botón Aceptar con la lógica de inserción
-btn_aceptar = tk.Button(frame_botones, text="Aceptar", command=aceptar_datos, width=15, bg="#4CAF50", fg="white")
+btn_aceptar = tk.Button(frame_botones, text="Registrar Venta", command=enviar_venta_final, width=18, bg="#4CAF50", fg="white")
 btn_aceptar.pack(side="right", padx=5)
 
-# Iniciar la aplicación
 window.mainloop()
