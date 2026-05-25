@@ -3,7 +3,7 @@ from tkinter import ttk
 from tkinter import messagebox  # Para mostrar alertas de éxito o error
 
 # Importamos la función de inserción desde nuestro módulo crud.py
-from crud import insertar_venta 
+from crud_varios_productos import insertar_venta 
 
 # Diccionarios globales para almacenar las referencias a los Entry
 campos_cliente = {}

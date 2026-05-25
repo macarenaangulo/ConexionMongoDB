@@ -2,69 +2,81 @@ import tkinter as tk
 from tkinter import ttk
 from tkinter import messagebox
 
-# Importamos la función de inserción desde nuestro módulo crud.py
-from crud import insertar_venta 
+# Importamos todas las funciones desde tu módulo crud.py
+from crud import *
 
-# Diccionarios globales para almacenar las referencias a los Entry de datos
 campos_cliente = {}
 campos_producto = {}
 
-# Lista en memoria para almacenar los productos agregados temporalmente
-lista_productos_memoria = []
+# LISTA EN MEMORIA OCULTA PARA LOGRAR EL MULTI-PRODUCTO DE FORMA SIMPLE
+productos_acumulados_memoria = []
 
-def limpiar_campos_completos():
-    """Borra absolutamente todo el formulario y vacía la tabla de productos"""
-    global lista_productos_memoria
-    for entry in campos_cliente.values():
-        entry.delete(0, tk.END)
-    limpiar_formulario_producto()
-    
-    # Vaciar lista en memoria y limpiar el Treeview
-    lista_productos_memoria = []
-    for item in tabla_productos.get_children():
-        tabla_productos.delete(item)
+# Variables globales para los componentes de la interfaz
+txt_resultados = None
+ent_buscar_nombre = None
+ent_id_control = None
+ent_item_eliminar = None
+ent_nueva_dir = None
+ent_nueva_com = None
+ent_nueva_ciu = None
+lbl_contador = None  # Etiqueta para avisar cuántos productos van acumulados
 
 def limpiar_formulario_producto():
-    """Limpia sólo los campos del bloque Producto para poder escribir uno nuevo"""
+    """Limpia exclusivamente las cajas de texto de la zona de productos"""
     campos_producto["item"].delete(0, tk.END)
     campos_producto["cantidad"].delete(0, tk.END)
     campos_producto["precio"].delete(0, tk.END)
 
-def agregar_producto_a_lista():
-    """Valida el producto actual y lo añade a la tabla visual y a la memoria"""
-    item = campos_producto["item"].get().strip()
-    cantidad_str = campos_producto["cantidad"].get().strip()
-    precio_str = campos_producto["precio"].get().strip()
+def limpiar_campos_completo():
+    """Limpia todo el formulario, los controles y vacía la lista temporal de memoria"""
+    global productos_acumulados_memoria, lbl_contador
+    for entry in campos_cliente.values():
+        entry.delete(0, tk.END)
+    limpiar_formulario_producto()
+    ent_id_control.delete(0, tk.END)
+    ent_item_eliminar.delete(0, tk.END)
+    ent_nueva_dir.delete(0, tk.END)
+    ent_nueva_com.delete(0, tk.END)
+    ent_nueva_ciu.delete(0, tk.END)
     
-    if not item or not cantidad_str or not precio_str:
-        messagebox.showwarning("Campos incompletos", "Por favor, complete todos los campos del producto.")
-        return
-        
+    # Reseteamos la memoria temporal
+    productos_acumulados_memoria = []
+    if lbl_contador:
+        lbl_contador.config(text="Productos listos para guardar: 0", fg="black")
+
+def agregar_producto_a_memoria():
+    """Acción del nuevo botón: Valida el producto actual y lo suma a la lista temporal"""
+    global productos_acumulados_memoria, lbl_contador
+    
+    item = campos_producto["item"].get().strip()
     try:
-        cantidad = int(cantidad_str)
-        precio = int(precio_str)
+        cantidad = int(campos_producto["cantidad"].get().strip() or 0)
+        precio = int(campos_producto["precio"].get().strip() or 0)
     except ValueError:
-        messagebox.showerror("Error de tipo", "Cantidad y Precio deben ser números enteros.")
+        messagebox.showerror("Error", "Cantidad y Precio deben ser números enteros.")
         return
 
-    # Calcular subtotal para mostrarlo en la tabla
-    subtotal = cantidad * precio
-    
-    # 1. Agregar a la lista interna en memoria
-    lista_productos_memoria.append({
+    if not item or cantidad <= 0 or precio <= 0:
+        messagebox.showwarning("Atención", "Escriba el nombre del producto y asigne cantidad/precio válidos.")
+        return
+
+    # Añadimos el producto a nuestra lista provisional en Python
+    productos_acumulados_memoria.append({
         "item": item,
         "cantidad": cantidad,
         "precio": precio
     })
+
+    # Actualizamos el aviso visual para el usuario
+    lbl_contador.config(text=f"Productos listos para guardar: {len(productos_acumulados_memoria)}", fg="#2196F3", font=('Helvetica', 9, 'bold'))
     
-    # 2. Insertar visualmente en el Treeview (tabla en pantalla)
-    tabla_productos.insert("", tk.END, values=(item, cantidad, f"${precio:,}", f"${subtotal:,}"))
-    
-    # Limpiar solo el bloque de producto para que ingresen el siguiente de forma cómoda
+    # Limpiamos las casillas de producto para que escriba el siguiente cómodamente
     limpiar_formulario_producto()
 
-def enviar_venta_final():
-    """Recupera los datos del cliente y el arreglo de productos para enviarlo al CRUD"""
+def aceptar_datos():
+    """Toma los datos del cliente, une el producto que quede en pantalla (si hay) e inserta todo"""
+    global productos_acumulados_memoria
+    
     datos_cliente = {
         "nombre": campos_cliente["Nombre:"].get().strip(),
         "email": campos_cliente["Email:"].get().strip(),
@@ -73,91 +85,269 @@ def enviar_venta_final():
         "ciudad": campos_cliente["Ciudad:"].get().strip()
     }
     
-    # Validaciones fundamentales
     if not datos_cliente["nombre"]:
-        messagebox.showwarning("Campos vacíos", "El Nombre del cliente es obligatorio.")
-        return
-        
-    if not lista_productos_memoria:
-        messagebox.showwarning("Sin productos", "Debe agregar al menos un producto a la lista antes de guardar.")
+        messagebox.showwarning("Atención", "Debe ingresar al menos el nombre del cliente.")
         return
 
-    # Llamar al módulo CRUD enviando la lista (array) de productos directamente
-    id_generado = insertar_venta(datos_cliente, lista_productos_memoria)
-    
+    # Verificamos si el usuario dejó un último producto escrito en las casillas sin presionar el botón "Agregar más"
+    ultimo_item = campos_producto["item"].get().strip()
+    if ultimo_item:
+        try:
+            ultimo_cant = int(campos_producto["cantidad"].get().strip() or 0)
+            ultimo_pre = int(campos_producto["precio"].get().strip() or 0)
+            if ultimo_cant > 0 and ultimo_pre > 0:
+                productos_acumulados_memoria.append({
+                    "item": ultimo_item,
+                    "cantidad": ultimo_cant,
+                    "precio": ultimo_pre
+                })
+        except ValueError:
+            pass
+
+    # Si no hay absolutamente ningún producto acumulado, no procesamos la venta
+    if not productos_acumulados_memoria:
+        messagebox.showwarning("Atención", "Debe añadir al menos un producto a la venta.")
+        return
+
+    # Enviamos el documento estructurado a MongoDB
+    id_generado = insertar_venta(datos_cliente, productos_acumulados_memoria)
     if id_generado:
-        messagebox.showinfo("Éxito", f"Venta registrada exitosamente con {len(lista_productos_memoria)} productos.\nID: {id_generado}")
-        limpiar_campos_completos()
+        messagebox.showinfo("Éxito", f"Venta registrada con éxito.\nID: {id_generado}\nTotal de productos: {len(productos_acumulados_memoria)}")
+        limpiar_campos_completo()
+        buscar_todas()  # Refresca automáticamente el visor inferior
     else:
-        messagebox.showerror("Error", "No se pudo guardar la venta. Revise la consola del sistema.")
+        messagebox.showerror("Error", "No se pudo conectar o guardar en MongoDB.")
+
+def renderizar_lista_en_pantalla(lista_ventas):
+    """Escribe los resultados de MongoDB estructuradamente en el visor de texto"""
+    global txt_resultados
+    if txt_resultados is None: return
+
+    txt_resultados.config(state="normal")
+    txt_resultados.delete("1.0", tk.END)
+    
+    if not lista_ventas:
+        txt_resultados.insert(tk.END, "📭 No se encontraron ventas con los criterios seleccionados.")
+        txt_resultados.config(state="disabled")
+        return
+
+    texto_final = ""
+    for i, venta in enumerate(lista_ventas, 1):
+        cliente = venta.get("cliente", {})
+        productos = venta.get("producto", [])
+        
+        texto_final += f"🛒 Venta #{i} | ID único: {venta['_id']}\n"
+        texto_final += f"👤 Cliente: {cliente.get('nombre', 'Sin nombre')}\n"
+        
+        dir_str = cliente.get('direccion', 'No especificada')
+        com_str = cliente.get('comuna', 'No especificada')
+        ciu_str = cliente.get('ciudad', 'No especificada')
+        texto_final += f"📍 Ubicación: {dir_str}, {com_str}, {ciu_str}\n"
+        
+        texto_final += "📦 Productos en esta venta:\n"
+        if isinstance(productos, list):
+            for prod in productos:
+                if isinstance(prod, dict):
+                    texto_final += f"   - [{prod.get('item')}]: {prod.get('cantidad')} un. x ${prod.get('precio'):,}\n"
+        elif isinstance(productos, dict):
+            texto_final += f"   - [{productos.get('item')}]: {productos.get('cantidad')} un. x ${productos.get('precio'):,}\n"
+        
+        texto_final += "-" * 50 + "\n"
+        
+    txt_resultados.insert(tk.END, texto_final)
+    txt_resultados.config(state="disabled")
+
+def buscar_todas():
+    """Trae absolutamente todas las ventas de la BD"""
+    ventas = obtener_todas_ventas()
+    renderizar_lista_en_pantalla(ventas)
+
+def buscar_por_nombre_cliente():
+    """Filtra las ventas en MongoDB por el nombre escrito arriba"""
+    global ent_buscar_nombre
+    nombre = ent_buscar_nombre.get().strip()
+    if not nombre:
+        messagebox.showwarning("Atención", "Escriba un nombre en la casilla para poder buscar.")
+        return
+    ventas_filtradas = buscar_ventas_por_nombre(nombre)
+    renderizar_lista_en_pantalla(ventas_filtradas)
+
+def ejecutar_modificacion_cliente():
+    """Toma el ID, nueva dirección, comuna y ciudad y los guarda en MongoDB"""
+    global ent_id_control, ent_nueva_dir, ent_nueva_com, ent_nueva_ciu
+    id_ingresado = ent_id_control.get().strip()
+    dir_ingresada = ent_nueva_dir.get().strip()
+    com_ingresada = ent_nueva_com.get().strip()
+    ciu_ingresada = ent_nueva_ciu.get().strip()
+
+    if not id_ingresado or not dir_ingresada or not com_ingresada or not ciu_ingresada:
+        messagebox.showwarning("Atención", "Complete todos los campos de ubicación (ID, Dirección, Comuna y Ciudad).")
+        return
+
+    if actualizar_datos_cliente(id_ingresado, dir_ingresada, com_ingresada, ciu_ingresada):
+        messagebox.showinfo("Éxito", "Ubicación del cliente (Dirección, Comuna y Ciudad) actualizada en MongoDB.")
+        ent_nueva_dir.delete(0, tk.END)
+        ent_nueva_com.delete(0, tk.END)
+        ent_nueva_ciu.delete(0, tk.END)
+        buscar_todas()
+    else:
+        messagebox.showerror("Error", "No se pudo actualizar. Verifique el ID de la venta.")
+
+def ejecutar_eliminacion_completa():
+    """Elimina el documento entero de MongoDB"""
+    global ent_id_control
+    id_ingresado = ent_id_control.get().strip()
+
+    if not id_ingresado:
+        messagebox.showwarning("Atención", "Ingrese el ID de la venta para poder eliminar.")
+        return
+
+    if messagebox.askyesno("Confirmar", f"¿Desea eliminar PERMANENTEMENTE toda la venta ID: {id_ingresado}?"):
+        if eliminar_venta_por_id(id_ingresado):
+            messagebox.showinfo("Éxito", "Venta eliminada por completo.")
+            ent_id_control.delete(0, tk.END)
+            buscar_todas()
+        else:
+            messagebox.showerror("Error", "ID no encontrado o inválido.")
+
+def ejecutar_eliminacion_item():
+    """Remueve únicamente el producto especificado dentro del arreglo del documento"""
+    global ent_id_control, ent_item_eliminar
+    id_ingresado = ent_id_control.get().strip()
+    producto_ingresado = ent_item_eliminar.get().strip()
+
+    if not id_ingresado or not producto_ingresado:
+        messagebox.showwarning("Atención", "Debe completar el 'ID Venta' y el 'Producto' para remover el ítem.")
+        return
+
+    if messagebox.askyesno("Confirmar", f"¿Desea sacar el producto [{producto_ingresado}] de la venta {id_ingresado}?"):
+        if eliminar_item_de_lista(id_ingresado, producto_ingresado):
+            messagebox.showinfo("Éxito", f"Producto '{producto_ingresado}' removido correctamente.")
+            ent_item_eliminar.delete(0, tk.END)
+            buscar_todas()
+        else:
+            messagebox.showerror("Error", "No se modificó el registro. Verifique ID y Producto.")
 
 
-# --- CONFIGURACIÓN VENTANA PRINCIPAL ---
+# --- CONFIGURACIÓN DE LA VENTANA PRINCIPAL ---
 window = tk.Tk()
-window.title("Formulario de Ventas Multi-Producto")
-window.geometry("460x650") # Ampliado para dar espacio a la tabla
+window.title("Formulario Cliente y Ventas")
+window.geometry("540x900")
 
-# --- FRAME: DATOS DEL CLIENTE ---
-frame_cliente = tk.LabelFrame(window, text="Datos del Cliente", padx=10, pady=10)
-frame_cliente.pack(padx=20, pady=10, fill="x")
+# ==========================================
+# FRAME 1: PARTE SUPERIOR (CONSULTAS)
+# ==========================================
+frame_busqueda = tk.LabelFrame(window, text=" Consultas y Filtros ", padx=10, pady=10)
+frame_busqueda.pack(padx=20, pady=5, fill="x")
+
+btn_buscar_todos = tk.Button(frame_busqueda, text="📋 Mostrar Todas las Ventas", command=buscar_todas, bg="#607D8B", fg="white")
+btn_buscar_todos.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 10))
+
+tk.Label(frame_busqueda, text="Nombre Cliente:").grid(row=1, column=0, sticky="w")
+ent_buscar_nombre = tk.Entry(frame_busqueda, width=22)
+ent_buscar_nombre.grid(row=1, column=1, padx=5)
+
+btn_buscar_filtro = tk.Button(frame_busqueda, text="🔍 Filtrar", command=buscar_por_nombre_cliente, bg="#9C27B0", fg="white")
+btn_buscar_filtro.grid(row=1, column=2, sticky="ew")
+frame_busqueda.columnconfigure(1, weight=1)
+
+# ==========================================
+# FRAME 2: PARTE CENTRAL (FORMULARIO DE REGISTRO)
+# ==========================================
+frame_cliente = tk.LabelFrame(window, text="Datos del Cliente", padx=10, pady=5)
+frame_cliente.pack(padx=20, pady=5, fill="x")
 
 labels_cliente = ["Nombre:", "Email:", "Dirección:", "Comuna:", "Ciudad:"]
 for i, texto in enumerate(labels_cliente):
     tk.Label(frame_cliente, text=texto).grid(row=i, column=0, sticky="w", pady=2)
-    entry = tk.Entry(frame_cliente, width=35)
+    entry = tk.Entry(frame_cliente, width=30)
     entry.grid(row=i, column=1, pady=2)
     campos_cliente[texto] = entry
 
-# --- FRAME: ENTRADA DE PRODUCTOS ---
-frame_productos = tk.LabelFrame(window, text="Ingreso de Productos", padx=10, pady=10)
+# SECCIÓN PRODUCTOS REFORMULADA CON EL NUEVO BOTÓN LATERAL
+frame_productos = tk.LabelFrame(window, text=" Carga de Productos ", padx=10, pady=5)
 frame_productos.pack(padx=20, pady=5, fill="x")
 
 tk.Label(frame_productos, text="Producto:").grid(row=0, column=0, sticky="w")
-ent_prod = tk.Entry(frame_productos, width=35)
-ent_prod.grid(row=0, column=1, pady=2, columnspan=3)
+ent_prod = tk.Entry(frame_productos, width=22)
+ent_prod.grid(row=0, column=1, pady=2, sticky="w")
 campos_producto["item"] = ent_prod
+
+# NUEVO BOTÓN: Ubicado a la derecha de las casillas de producto
+btn_mas_productos = tk.Button(frame_productos, text="➕ Agregar más productos", command=agregar_producto_a_memoria, bg="#2196F3", fg="white", font=('Helvetica', 8, 'bold'))
+btn_mas_productos.grid(row=0, column=2, rowspan=2, padx=10, sticky="nsew", pady=2)
 
 tk.Label(frame_productos, text="Cantidad:").grid(row=1, column=0, sticky="w")
 ent_cant = tk.Entry(frame_productos, width=5)
-ent_cant.grid(row=1, column=1, sticky="w", pady=2)
+ent_cant.grid(row=1, column=1, pady=2, sticky="w")
 campos_producto["cantidad"] = ent_cant
 
-tk.Label(frame_productos, text="Precio:").grid(row=1, column=2, sticky="w", padx=5)
-ent_precio = tk.Entry(frame_productos, width=12)
-ent_precio.grid(row=1, column=3, sticky="w", pady=2)
+tk.Label(frame_productos, text="Precio:").grid(row=2, column=0, sticky="w")
+ent_precio = tk.Entry(frame_productos, width=10)
+ent_precio.grid(row=2, column=1, pady=2, sticky="w")
 campos_producto["precio"] = ent_precio
 
-# Botón intermedio para añadir ítems a la tabla
-btn_add_prod = tk.Button(frame_productos, text="➕ Agregar Producto a Lista", command=agregar_producto_a_lista, bg="#2196F3", fg="white")
-btn_add_prod.grid(row=2, column=0, columnspan=4, pady=8, sticky="ew")
+# NUEVA ETIQUETA INFORMATIVA: Indica cuántos artículos van acumulados en memoria temporal
+lbl_contador = tk.Label(frame_productos, text="Productos listos para guardar: 0", font=('Helvetica', 9, 'italic'))
+lbl_contador.grid(row=3, column=0, columnspan=3, pady=4, sticky="w")
 
-# --- FRAME: LISTA / DETALLE DE LA VENTA ---
-frame_tabla = tk.LabelFrame(window, text="Detalle de Productos Agregados", padx=10, pady=10)
-frame_tabla.pack(padx=20, pady=5, fill="both", expand=True)
-
-# Configurar columnas de la tabla visual
-columnas = ("producto", "cantidad", "precio", "subtotal")
-tabla_productos = ttk.Treeview(frame_tabla, columns=columnas, show="headings", height=5)
-
-tabla_productos.heading("producto", text="Producto")
-tabla_productos.heading("cantidad", text="Cant.")
-tabla_productos.heading("precio", text="Precio Unit.")
-tabla_productos.heading("subtotal", text="Subtotal")
-
-tabla_productos.column("producto", width=160, anchor="w")
-tabla_productos.column("cantidad", width=50, anchor="center")
-tabla_productos.column("precio", width=80, anchor="e")
-tabla_productos.column("subtotal", width=80, anchor="e")
-tabla_productos.pack(fill="both", expand=True)
-
-# --- FRAME: ACCIONES FINALES ---
 frame_botones = tk.Frame(window)
-frame_botones.pack(padx=20, pady=15, fill="x")
+frame_botones.pack(pady=10)
+tk.Button(frame_botones, text="Limpiar Todo", width=12, command=limpiar_campos_completo).pack(side="left", padx=10)
+tk.Button(frame_botones, text="Aceptar", width=12, command=aceptar_datos, bg="#4CAF50", fg="white", font=('Helvetica', 9, 'bold')).pack(side="left", padx=10)
 
-btn_limpiar = tk.Button(frame_botones, text="Limpiar Todo", command=limpiar_campos_completos, width=15)
-btn_limpiar.pack(side="left", padx=5)
 
-btn_aceptar = tk.Button(frame_botones, text="Registrar Venta", command=enviar_venta_final, width=18, bg="#4CAF50", fg="white")
-btn_aceptar.pack(side="right", padx=5)
+# ==========================================
+# SECCIÓN: ELIMINACION Y MODIFICACIÓN
+# ==========================================
+frame_modificaciones = tk.LabelFrame(window, text=" Eliminación y Modificación ", padx=10, pady=10)
+frame_modificaciones.pack(fill="x", padx=20, pady=5)
+
+tk.Label(frame_modificaciones, text="ID Venta:").grid(row=0, column=0, sticky="w", pady=2)
+ent_id_control = tk.Entry(frame_modificaciones, width=22)
+ent_id_control.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+
+btn_borrar_doc = tk.Button(frame_modificaciones, text="🗑️ Borrar Venta Completa", command=ejecutar_eliminacion_completa, bg="#b71c1c", fg="white", font=('Helvetica', 8))
+btn_borrar_doc.grid(row=0, column=2, sticky="ew", padx=2, pady=2)
+
+tk.Label(frame_modificaciones, text="Producto:").grid(row=1, column=0, sticky="w", pady=2)
+ent_item_eliminar = tk.Entry(frame_modificaciones, width=22)
+ent_item_eliminar.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+
+btn_borrar_item = tk.Button(frame_modificaciones, text="❌ Sacar Solo este Ítem", command=ejecutar_eliminacion_item, bg="#e65100", fg="white", font=('Helvetica', 8))
+btn_borrar_item.grid(row=1, column=2, sticky="ew", padx=2, pady=2)
+
+tk.Label(frame_modificaciones, text="Nueva Dirección:").grid(row=2, column=0, sticky="w", pady=2)
+ent_nueva_dir = tk.Entry(frame_modificaciones, width=22)
+ent_nueva_dir.grid(row=2, column=1, padx=5, pady=2, sticky="w")
+
+btn_editar_cliente = tk.Button(frame_modificaciones, text="📝 Editar Ubicación\n(Dirección/Comuna/Ciudad)", command=ejecutar_modificacion_cliente, bg="#1e88e5", fg="white", font=('Helvetica', 8, 'bold'))
+btn_editar_cliente.grid(row=2, column=2, rowspan=3, sticky="nsew", padx=2, pady=2)
+
+tk.Label(frame_modificaciones, text="Nueva Comuna:").grid(row=3, column=0, sticky="w", pady=2)
+ent_nueva_com = tk.Entry(frame_modificaciones, width=22)
+ent_nueva_com.grid(row=3, column=1, padx=5, pady=2, sticky="w")
+
+tk.Label(frame_modificaciones, text="Nueva Ciudad:").grid(row=4, column=0, sticky="w", pady=2)
+ent_nueva_ciu = tk.Entry(frame_modificaciones, width=22)
+ent_nueva_ciu.grid(row=4, column=1, padx=5, pady=2, sticky="w")
+
+frame_modificaciones.columnconfigure(2, weight=1)
+
+
+# ==========================================
+# FRAME 3: PARTE INFERIOR (DESPLIEGUE DE VENTAS)
+# ==========================================
+frame_resultados = tk.LabelFrame(window, text=" Ventas Encontradas ", padx=10, pady=5)
+frame_resultados.pack(padx=20, pady=5, fill="both", expand=True)
+
+scroll_y = tk.Scrollbar(frame_resultados)
+scroll_y.pack(side="right", fill="y")
+
+txt_resultados = tk.Text(frame_resultados, height=8, yscrollcommand=scroll_y.set, font=('Consolas', 9))
+txt_resultados.pack(fill="both", expand=True)
+scroll_y.config(command=txt_resultados.yview)
+
+txt_resultados.config(state="disabled")
 
 window.mainloop()
